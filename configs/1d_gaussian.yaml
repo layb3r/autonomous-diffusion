@@ -1,0 +1,29 @@
+data:
+  type: "OneDGaussianDataset"
+  n_samples: 2000
+  noise_std: 0.3
+  modes: [-3.0, 2.0]
+
+model:
+  type: "TimeMLP"
+  data_dim: 1
+  hidden_dim: 64
+
+diffusion:
+  model_type: "EDM"
+
+training:
+  batch_size: 128
+  learning_rate: 2.0e-4
+  num_steps: 10000
+  save_and_sample_every: 250
+  sample_size: 64
+  device: "cuda"
+
+sampling:
+  t_min: 1e-3
+  stochastic: false
+  eta: 1.0
+
+seed: 42
+experiment_name: "1d_gaussian"

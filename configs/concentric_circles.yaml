@@ -1,0 +1,33 @@
+data:
+  type: "ConcentricCirclesDataset"
+  n_samples: 4096
+  image_size: 32
+  radii: [0.35, 0.65]
+  thickness: 0.05
+  noise: 0.03
+  center_jitter: 0.08
+
+model:
+  type: "NoiseAgnosticSmallUNet"
+  in_channels: 1
+  base_dim: 64
+  # time_dim: 128
+
+diffusion:
+  model_type: "FM"
+
+training:
+  batch_size: 128
+  learning_rate: 1.0e-4
+  num_steps: 1000
+  save_and_sample_every: 200
+  sample_size: 64
+  device: "cuda"
+
+sampling:
+  t_min: 1e-3
+  stochastic: false
+  eta: 1.0
+
+seed: 42
+experiment_name: "concentric_circles"
