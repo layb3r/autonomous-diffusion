@@ -35,7 +35,6 @@ ENV/
 *.ipynb
 
 # Outputs and artifacts
-*.png
 *.jpg
 *.gif
 output/
