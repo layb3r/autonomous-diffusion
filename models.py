@@ -1,7 +1,7 @@
 from torch import nn
 import torch
 from torch.nn import functional as F
-from helper import DoubleConv, ResidualBlock, UpSampleBlock
+from helper import DoubleConv, Down, Up
 
 
 class SmallUNet(nn.Module):
@@ -112,8 +112,55 @@ class NoiseAgnosticSmallUNet(nn.Module):
         x = self.dc4(x)
 
         return self.outc(x)
+
     
+class NoiseLevelPredictor(nn.Module):
+    def __init__(self, in_channels=1, base_dim=64):
+        super().__init__()
+
+        # Encoder
+        self.inc = DoubleConv(in_channels, base_dim)
+        self.down1 = Down(base_dim, base_dim * 2)
+        self.down2 = Down(base_dim * 2, base_dim * 4)
+
+        # Bottleneck
+        self.bot = DoubleConv(base_dim * 4, base_dim * 4)
+
+        # Decoder
+        self.up1 = Up(base_dim * 4, base_dim * 2, base_dim * 2)
+        self.up2 = Up(base_dim * 2, base_dim, base_dim)
+
+        # Final refinement
+        self.out_conv = DoubleConv(base_dim, base_dim)
+
+        # Global pooling removes dependency on image size
+        self.pool = nn.AdaptiveAvgPool2d(1)
+
+        # Predict scalar noise level
+        self.fc = nn.Sequential(
+            nn.Linear(base_dim, base_dim),
+            nn.GELU(),
+            nn.Linear(base_dim, 1)
+        )
+
+    def forward(self, x):
+        x1 = self.inc(x) # (B, base, H, W)
+        x2 = self.down1(x1) # (B, 2base, H/2, W/2)
+        x3 = self.down2(x2) # (B, 4base, H/4, W/4)
+
+        x3 = self.bot(x3)
+
+        x = self.up1(x3, x2)
+        x = self.up2(x, x1)
+
+        x = self.out_conv(x)
+
+        x = self.pool(x) # (B, C, 1, 1)
+        x = x.flatten(1) # (B, C)
+
+        return self.fc(x)
     
+
 class TimeMLP(nn.Module):
     def __init__(self, data_dim, hidden_dim=256):
         super().__init__()

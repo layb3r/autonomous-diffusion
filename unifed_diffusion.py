@@ -15,6 +15,7 @@ from model_policies import (
     create_policy,
 )
 
+
 def exists(x):
     return x is not None
 
@@ -44,11 +45,13 @@ class UnifiedDiffusion(nn.Module):
         policy_kwargs=None,
         data_shape,
         eps=1e-6,
+        noise_level_predictor=None,
     ):
         super().__init__()
         self.model = model
         self.data_shape = tuple(data_shape)
         self.eps = float(eps)
+        self.noise_level_predictor = noise_level_predictor
 
         if exists(policy):
             self.policy = policy
@@ -102,7 +105,15 @@ class UnifiedDiffusion(nn.Module):
 
         _, _, c, d = self.schedule(t)
         target = expand_like(c, x0) * x0 + expand_like(d, x0) * noise
-        return F.mse_loss(out, target)
+        loss = F.mse_loss(out, target)
+        
+        # Add noise level prediction loss if predictor is specified
+        if exists(self.noise_level_predictor):
+            t_pred = self.noise_level_predictor(x_t).squeeze(-1)
+            t_pred_loss = F.mse_loss(t_pred, t)
+            loss = loss + t_pred_loss
+        
+        return loss
 
     def forward(self, x0):
         assert x0.shape[1:] == self.data_shape, (
@@ -141,6 +152,69 @@ class UnifiedDiffusion(nn.Module):
                 x = self.policy.ode_step(x, t_cur, t_next, drift_fn)
             else:
                 # Temporary override: keep ability to force Euler even for EDM.
+                original_solver = self.policy.solver
+                self.policy.solver = solver
+                x = self.policy.ode_step(x, t_cur, t_next, drift_fn)
+                self.policy.solver = original_solver
+
+            if stochastic:
+                x = self.policy.stochastic_step(x, t_cur, t_next, eta=eta)
+
+        return x
+
+    @torch.inference_mode()
+    def sample_from_observation(
+        self,
+        x_obs,
+        *,
+        t_start=None,
+        n_steps=None,
+        t_min=1e-3,
+        stochastic=None,
+        eta=1.0,
+        solver=None,
+    ):
+        assert x_obs.shape[1:] == self.data_shape, (
+            f"expected [batch, {self.data_shape}], got {tuple(x_obs.shape)}"
+        )
+
+        stochastic = default(stochastic, self.policy.default_stochastic)
+        solver = default(solver, self.policy.solver)
+        n_steps = default(n_steps, self.policy.n_steps)
+
+        bsz = x_obs.shape[0]
+        if t_start is None:
+            if not exists(self.noise_level_predictor):
+                raise ValueError("noise_level_predictor is required when t_start is not provided")
+            t_pred = self.noise_level_predictor(x_obs).squeeze(-1)
+            t_scalar = t_pred.mean().clamp(self.eps, 1.0 - self.eps)
+        else:
+            t_scalar = torch.as_tensor(t_start, device=self.device, dtype=x_obs.dtype)
+            t_scalar = t_scalar.clamp(self.eps, 1.0 - self.eps)
+
+        if t_scalar.ndim != 0:
+            raise ValueError("t_start must be a scalar in [0, 1] when provided")
+
+        t_full = self.policy.discretize_timesteps(n_steps, t_min, device=self.device)
+        t_tail = t_full[t_full < t_scalar]
+        t_grid = torch.cat([t_scalar[None], t_tail], dim=0)
+
+        if t_grid.shape[0] < 2:
+            return x_obs
+
+        x = x_obs
+        for i in range(t_grid.shape[0] - 1):
+            t_cur = t_grid[i].expand(bsz)
+            t_next = t_grid[i + 1].expand(bsz)
+
+            def drift_fn(x_state, t_state):
+                out = self.model(x_state, t_state)
+                mu, nu = self._sampler_coefficients(t_state)
+                return expand_like(mu, x_state) * x_state + expand_like(nu, x_state) * out
+
+            if solver == "heun":
+                x = self.policy.ode_step(x, t_cur, t_next, drift_fn)
+            else:
                 original_solver = self.policy.solver
                 self.policy.solver = solver
                 x = self.policy.ode_step(x, t_cur, t_next, drift_fn)

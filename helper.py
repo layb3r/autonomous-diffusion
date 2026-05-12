@@ -17,6 +17,32 @@ class DoubleConv(nn.Module):
 
     def forward(self, x):
         return self.net(x)
+    
+
+class Down(nn.Module):
+    def __init__(self, in_ch, out_ch):
+        super().__init__()
+
+        self.net = nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, 3, stride=2, padding=1),
+            DoubleConv(out_ch, out_ch)
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class Up(nn.Module):
+    def __init__(self, in_ch, skip_ch, out_ch):
+        super().__init__()
+
+        self.conv = DoubleConv(in_ch + skip_ch, out_ch)
+
+    def forward(self, x, skip):
+        x = F.interpolate(x, size=skip.shape[-2:], mode="bilinear", align_corners=False)
+        x = torch.cat([x, skip], dim=1)
+        return self.conv(x)
+    
 
 class GroupNorm(nn.Module):
     def __init__(self, channels):

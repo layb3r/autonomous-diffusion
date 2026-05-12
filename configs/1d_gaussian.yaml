@@ -11,6 +11,11 @@ model:
 
 diffusion:
   model_type: "EDM"
+  noise_level_predictor:
+    enabled: false
+    type: "NoiseLevelPredictor"
+    in_channels: 1
+    base_dim: 64
 
 training:
   batch_size: 128

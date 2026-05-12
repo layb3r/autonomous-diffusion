@@ -13,6 +13,11 @@ def main():
     parser.add_argument("--config", required=True, help="Path to YAML config file")
     parser.add_argument("--device", default=None, help="Device override")
     parser.add_argument("--seed", type=int, default=None, help="Seed override")
+    parser.add_argument(
+        "--noise-level-predictor-type",
+        default=None,
+        help="Optional class name in models.py for noise-level predictor override",
+    )
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -30,10 +35,33 @@ def main():
     model = instantiate_from_config(model_module, cfg["model"])
 
     diffusion_cfg = cfg["diffusion"]
+    noise_level_predictor = None
+    predictor_cfg = diffusion_cfg.get("noise_level_predictor")
+
+    if predictor_cfg is None and args.noise_level_predictor_type is not None:
+        predictor_cfg = {"type": args.noise_level_predictor_type}
+
+    if predictor_cfg is not None:
+        predictor_cfg = dict(predictor_cfg)
+
+        if args.noise_level_predictor_type is not None:
+            predictor_cfg["type"] = args.noise_level_predictor_type
+
+        if predictor_cfg.get("enabled", True):
+            if "type" not in predictor_cfg:
+                raise ValueError(
+                    "diffusion.noise_level_predictor must include a 'type' field when enabled"
+                )
+
+            predictor_cfg.pop("enabled", None)
+            print(f"+ Creating {predictor_cfg['type']} noise-level predictor...")
+            noise_level_predictor = instantiate_from_config(model_module, predictor_cfg)
+
     diffusion = UnifiedDiffusion(
         model,
         model_type=diffusion_cfg["model_type"],
         data_shape=data.sample_shape,
+        noise_level_predictor=noise_level_predictor,
     )
     print(f"+ Diffusion model type: {diffusion.model_type}")
 
@@ -76,3 +104,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+"""python -m scripts.train --config ./configs/concentric_circles.yaml"""
