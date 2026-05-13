@@ -109,11 +109,10 @@ autonomous_diffusion/
 - Config-driven training and sampling.
 - Multiple solvers (Euler, Heun).
 
-### Phase 2: Blind ODE Traversal & Control (In Progress)
+### Phase 2: Blind ODE Traversal (Arbitrary Sampling)
 - **Blind ODE Traversal**: Pause/resume denoising mid-trajectory without explicit timestep tracking.
-- **Trajectory Interpolation**: Blend between multiple sampled ODE paths.
-- **Adaptive Sampling**: Dynamically adjust solver steps based on trajectory curvature or prediction confidence.
-- **Checkpoint & Restore**: Save/load model state at arbitrary ODE times for transfer learning.
+- **Noise-levle Predictor**: a model which explicitly predicts noise-level based on the current observation.
+- Theoretically proven that posterior **p(t|u)** concentrates in high-dimension.
 
 ### Phase 3: Dataset & Model Expansion (Next)
 - Add real datasets: MNIST, CIFAR-10, CelebA-HQ (32×32).
